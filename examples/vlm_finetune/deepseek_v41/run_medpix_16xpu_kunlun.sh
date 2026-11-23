@@ -29,12 +29,14 @@ for path in "$SOURCE_DIR" "$CONFIG"; do
 done
 mkdir -p "$LOG_DIR"
 
-# One --device per card. The image carries CUDA_VISIBLE_DEVICES=8 from the
-# container it was committed from, so the visible set has to be passed again or
-# only one card shows up inside.
+# Map every card on the host and let CUDA_VISIBLE_DEVICES pick the ones to
+# train on: XCCL resolves OAM ids from the full device set, and a partial
+# mapping makes it fail with "multiple devices are mapped to the same oam id".
+# The image also carries CUDA_VISIBLE_DEVICES from the container it was
+# committed from, so the visible set has to be passed again regardless.
 devices=()
-for id in "${xpu_list[@]}"; do
-    devices+=(--device "/dev/xpu$id")
+for node in /dev/xpu[0-9]*; do
+    devices+=(--device "$node")
 done
 devices+=(--device /dev/xpuctrl)
 

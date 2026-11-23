@@ -3,7 +3,9 @@
 #
 # The container image ships xpytorch but not nemo_automodel, so the patched
 # source tree is mounted and put on PYTHONPATH, the way the SJ53 runs do it.
-# Every path below can be overridden from the environment.
+# Every path below can be overridden from the environment. EXTRA_PYTHONPATH
+# appends a directory for packages the image lacks, e.g. a pip --target install
+# of mistral-common, which the tokenizer backend needs.
 set -euo pipefail
 
 IMAGE="${IMAGE:-lym-ds41-min-sft:xav2608-nemo080}"
@@ -55,7 +57,7 @@ docker run --rm --entrypoint /bin/bash \
     -v "$WORK_DIR:$WORK_DIR" \
     -v "$RUN_DIR:$RUN_DIR" \
     -w "$RUN_DIR" \
-    -e PYTHONPATH="$SOURCE_DIR" \
+    -e PYTHONPATH="$SOURCE_DIR${EXTRA_PYTHONPATH:+:$EXTRA_PYTHONPATH}" \
     -e CUDA_VISIBLE_DEVICES="$XPU_IDS" \
     -e OMP_NUM_THREADS=2 \
     -e PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512 \

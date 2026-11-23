@@ -424,7 +424,16 @@ class DeepseekV41Model(nn.Module):
         if destination_indices:
             destinations = torch.tensor(destination_indices, dtype=torch.long, device=embedded.device)
             indices = torch.tensor(feature_indices, dtype=torch.long, device=embedded.device)
-            embedded = embedded.flatten(0, 1).index_copy(0, destinations, features[indices]).view_as(embedded)
+            flat_embedded = embedded.flatten(0, 1)
+            # XPU has no ``index_copy`` backward; scatter the destination rows
+            # with a one-hot matmul (destinations are distinct image positions).
+            count = destinations.numel()
+            onehot = torch.zeros(
+                flat_embedded.shape[0], count, dtype=flat_embedded.dtype, device=flat_embedded.device
+            )
+            onehot[destinations, torch.arange(count, device=flat_embedded.device)] = 1
+            keep = (1 - onehot.sum(-1, keepdim=True)).to(flat_embedded.dtype)
+            embedded = (flat_embedded * keep + onehot @ features[indices]).view_as(embedded)
         for marker, value in (
             (IMAGE_START, self.image_start),
             (IMAGE_END, self.image_end),

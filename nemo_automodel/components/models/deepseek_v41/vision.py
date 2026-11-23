@@ -154,5 +154,8 @@ class DeepseekV41VisionAligner(DeepseekV4VisionAligner):
         for features, (h, w) in zip(x.split([h * w for h, w in grids]), grids, strict=True):
             features = features.view(h, w, -1).permute(2, 0, 1)
             features = F.pad(features, (0, -w % ratio, 0, -h % ratio))
-            merged.append(F.unfold(features.unsqueeze(0), ratio, stride=ratio).squeeze(0).transpose(0, 1))
+            # XPU has no im2col kernel; a stride==kernel unfold is a reshape+permute.
+            c = features.shape[0]
+            ph, pw = features.shape[1] // ratio, features.shape[2] // ratio
+            merged.append(features.view(c, ph, ratio, pw, ratio).permute(1, 3, 0, 2, 4).reshape(ph * pw, -1))
         return self.w2(F.gelu(self.w1(torch.cat(merged))))

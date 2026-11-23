@@ -231,15 +231,20 @@ def _apply_rope(values: torch.Tensor, angles: torch.Tensor, *, inverse: bool = F
     if _ROPE_IMPL == "triton":
         return apply_rope_triton(values, angles, inverse=inverse)
     rotary_dim = angles.shape[-1] * 2
-    pairs = torch.view_as_complex(values[..., -rotary_dim:].float().unflatten(-1, (-1, 2)).contiguous())
-    # Preserve the released complex-multiply rounding. Separate real-valued
-    # multiplies change some BF16 values and can cross subsequent FP4/FP8 bins.
-    frequencies = torch.polar(torch.ones_like(angles), angles)
-    if values.ndim == 4:
-        frequencies = frequencies.unsqueeze(2)
+    # Rotate with explicit real multiplies. The complex-view form
+    # (``view_as_complex`` / ``view_as_real``) has no backward implementation on
+    # the XPU backend, so expand the conjugate multiply into its cos/sin terms.
+    pairs = values[..., -rotary_dim:].float().unflatten(-1, (-1, 2))
+    cos = torch.cos(angles)
+    sin = torch.sin(angles)
     if inverse:
-        frequencies = frequencies.conj()
-    rotated = torch.view_as_real(pairs * frequencies).flatten(-2).to(values.dtype)
+        sin = -sin
+    if values.ndim == 4:
+        cos = cos.unsqueeze(2)
+        sin = sin.unsqueeze(2)
+    real = pairs[..., 0] * cos - pairs[..., 1] * sin
+    imag = pairs[..., 0] * sin + pairs[..., 1] * cos
+    rotated = torch.stack((real, imag), dim=-1).flatten(-2).to(values.dtype)
     # Assemble the result as a contiguous copy of the input plus one narrow slice write. The values are
     # bitwise those of ``torch.cat((values[..., :-rotary_dim], rotated), dim=-1)``; the batched-concat
     # kernel that cat launches for a [batch, sequence, heads, 512] query reads and writes the whole tensor

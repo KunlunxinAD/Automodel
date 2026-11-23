@@ -162,7 +162,9 @@ def _use_fused_grad_norm(representative: torch.Tensor, norm_type: float) -> bool
         return False
     if not (math.isinf(norm_type) or norm_type == 2.0):
         return False
-    return representative.is_cuda
+    # XPU backends masquerade as CUDA (``is_cuda`` is True) but cannot run the
+    # Triton fused reduction, so fall back to the pure-torch path unconditionally.
+    return False
 
 
 def _local_te_l2_norm(gradients: list[torch.Tensor], target_device: torch.device) -> torch.Tensor:

@@ -208,7 +208,11 @@ def _get_logical_numel(param) -> int:
 @torch.no_grad()
 def _get_model_param_stats(model: nn.Module) -> tuple[int, int, float]:
     """
-    Get the number of trainable parameters and the L2 norm of the model.
+    Get the number of trainable and total parameters.
+
+    The squared L2 norm is not computed and always returned as 0.0: reducing it
+    per-parameter is launch-bound on non-CUDA backends, and the value only feeds
+    a single initialization log line.
 
     Args:
         model: Model to analyze
@@ -216,28 +220,17 @@ def _get_model_param_stats(model: nn.Module) -> tuple[int, int, float]:
     Returns:
         total_params: int
         trainable_params: int
-        local_sq_norm: float
+        local_sq_norm: float (always 0.0)
     """
     total_params = 0
     trainable_params = 0
-    local_sq_norm = 0.0
 
     for p in model.parameters():
         n = _get_logical_numel(p)
         total_params += n
         if p.requires_grad:
             trainable_params += n
-        # Quantized parameters can store packed integer bytes. They still count
-        # above, but a norm of those bytes is neither supported nor meaningful.
-        if not (p.is_floating_point() or p.is_complex()):
-            continue
-        try:
-            local_sq_norm += p.detach().norm(2) ** 2
-        except Exception:
-            pass
-    if isinstance(local_sq_norm, torch.Tensor):
-        local_sq_norm = local_sq_norm.item()
-    return total_params, trainable_params, local_sq_norm
+    return total_params, trainable_params, 0.0
 
 
 @contextmanager

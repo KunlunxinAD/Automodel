@@ -25,6 +25,19 @@ from torch.nn import functional as F
 _fp4_table_cache: dict[tuple[torch.device, torch.dtype], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
+def _e4m3_roundtrip(values: torch.Tensor) -> torch.Tensor:
+    """Round finite, saturated E4M3 values with ties-to-even, including subnormals.
+
+    XPU cannot cast to ``torch.float8_e4m3fn``; this FP32 arithmetic matches the
+    real cast bit-for-bit (validated against CPU FP8 in validation/nemo).
+    """
+    magnitude = values.abs().clamp_max(448.0)
+    exponent = torch.floor(torch.log2(magnitude.clamp_min(2.0**-6))).clamp_min(-6)
+    step = torch.exp2(exponent - 3)
+    rounded = torch.round(magnitude / step) * step
+    return torch.copysign(rounded, values)
+
+
 def _power_of_two_ceiling(value: torch.Tensor) -> torch.Tensor:
     """Round positive normal FP32 values up to an exactly represented power of two.
 
@@ -60,10 +73,10 @@ def _cache_quantization_core(values: torch.Tensor, block_size: int, format: str)
     maximum = grouped.abs().amax(-1, keepdim=True)
     if format == "fp8":
         scale = _power_of_two_ceiling(maximum.clamp_min(1e-4) * (1 / 448))
-        rounded = (grouped / scale).clamp(-448, 448).to(torch.float8_e4m3fn).float()
+        rounded = _e4m3_roundtrip((grouped / scale).clamp(-448, 448))
     else:
         if format == "nvfp4":
-            scale = (maximum.clamp_min(6 * 2**-9) / 6).to(torch.float8_e4m3fn).float()
+            scale = _e4m3_roundtrip(maximum.clamp_min(6 * 2**-9) / 6)
         else:
             scale = _power_of_two_ceiling(maximum.clamp_min(6 * 2**-126) * (1 / 6))
         normalized = (grouped / scale).clamp(-6, 6)

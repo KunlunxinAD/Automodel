@@ -1,0 +1,228 @@
+# Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+#
+# DSV4.1-Flash MedPix-VQA SFT on 16 Kunlun P800 PCIe cards of a single node.
+# EP=16 (one routed expert per rank), FSDP2, random initialization: no base
+# weights are loaded. Backend selection, processor and dataset paths are the
+# ones that ran on SJ53; only the expert count, EP size, batch size and step
+# budget differ from ds41_medpix_sft_tiny.yaml.
+#
+# Launch with examples/vlm_finetune/deepseek_v41/run_medpix_16xpu_kunlun.sh
+recipe: FinetuneRecipeForVLM
+seed: 1234
+step_scheduler:
+  global_batch_size: 16
+  local_batch_size: 1
+  ckpt_every_steps: 1000
+  save_checkpoint_every_epoch: false
+  val_every_steps: 1000
+  log_remote_every_steps: 1
+  gc_every_steps: 10
+  num_epochs: 1
+  max_steps: 20
+dist_env:
+  backend: nccl
+  timeout_minutes: 60
+model:
+  _target_: nemo_automodel.NeMoAutoModelForImageTextToText.from_config
+  config:
+    _target_: nemo_automodel.components.models.deepseek_v41.config.DeepseekV41Config
+    image_token_id: 129280
+    text_config:
+      vocab_size: 129281
+      hidden_size: 64
+      moe_intermediate_size: 128
+      num_hidden_layers: 4
+      num_attention_heads: 4
+      num_key_value_heads: 1
+      head_dim: 16
+      qk_rope_head_dim: 4
+      q_lora_rank: 32
+      o_lora_rank: 32
+      o_groups: 1
+      hidden_act: silu
+      swiglu_limit: 10.0
+      rms_norm_eps: 1.0e-06
+      attention_bias: false
+      attention_dropout: 0.0
+      initializer_range: 0.02
+      use_cache: true
+      max_position_embeddings: 4096
+      rope_theta: 10000.0
+      rope_parameters:
+        rope_type: yarn
+        factor: 16
+        beta_fast: 32
+        beta_slow: 1
+        original_max_position_embeddings: 65536
+        rope_theta: 10000.0
+      n_routed_experts: 16
+      n_shared_experts: 1
+      num_experts_per_tok: 2
+      scoring_func: sqrtsoftplus
+      topk_method: noaux_tc
+      norm_topk_prob: true
+      routed_scaling_factor: 1.5
+      sliding_window: 128
+      compress_ratios:
+      - 0
+      - 0
+      - 0
+      - 0
+      compress_rope_theta: 160000.0
+      kv_source_layer_ids: []
+      index_source_layer_ids: []
+      index_n_heads: 2
+      index_head_dim: 16
+      index_topk: 8
+      candidate_source_layer_id: -1
+      candidate_topk_blocks: 2048
+      candidate_block_size: 8
+      hc_mult: 1
+      hc_sinkhorn_iters: 1
+      hc_eps: 1.0e-06
+      engram_layer_ids: []
+      engram_num_embeddings: []
+      engram_max_ngram_size: 4
+      engram_vocab_size: 16000000
+      engram_n_heads: 8
+      engram_head_dim: 256
+      engram_pad_token_id: 2
+      engram_compressed_vocab_size: 99092
+      num_nextn_predict_layers: 0
+      dspark_block_size: 0
+      dspark_noise_token_id: 128799
+      dspark_target_layer_ids:
+      - 37
+      - 38
+      - 39
+      dspark_markov_rank: 256
+      dspark_n_routed_experts: 128
+      dspark_num_experts_per_tok: 3
+      compile_cache_quant: false
+      engram_strict_validation: false
+      engram_capacity_mode: false
+      compile_engram: false
+      reuse_sparse_selection_on_recompute: true
+      sparse_attention_backward: atomic
+      sparse_attention_backward_workspace_bytes: 2147483648
+      transformers_version: 5.18.0
+      architectures: null
+      output_hidden_states: false
+      return_dict: true
+      dtype: bfloat16
+      chunk_size_feed_forward: 0
+      is_encoder_decoder: false
+      pad_token_id: 2
+      bos_token_id: 0
+      eos_token_id: 1
+      tie_word_embeddings: false
+      model_type: deepseek_v41_text
+      output_attentions: false
+    vision_config:
+      transformers_version: 5.18.0
+      architectures: null
+      output_hidden_states: false
+      return_dict: true
+      dtype: null
+      chunk_size_feed_forward: 0
+      is_encoder_decoder: false
+      num_hidden_layers: 1
+      hidden_size: 64
+      num_attention_heads: 4
+      intermediate_size: 128
+      patch_size: 4
+      rope_theta: 10000.0
+      downsample_ratio: 2
+      max_image_tokens: 256
+      min_pixels: 4096
+      max_wh_ratio: null
+      model_type: deepseek_v41_vision
+      output_attentions: false
+  load_base_model: false
+  torch_dtype: bfloat16
+  use_liger_kernel: false
+  use_sdpa_patching: false
+  backend:
+    _target_: nemo_automodel.components.models.common.BackendConfig
+    attn: eager
+    linear: torch
+    rms_norm: torch_fp32
+    experts: torch_mm
+    dispatcher: torch
+    gate_precision: float32
+    compile_hc: false
+    rope_fusion: false
+    fake_balanced_gate: false
+    enable_hf_state_dict_adapter: true
+    enable_fsdp_optimizations: true
+processor:
+  _target_: nemo_automodel.components.models.deepseek_v41.processing.DeepseekV41Processor.from_pretrained
+  pretrained_model_name_or_path: /ssd1/liyiming06/deepseek41-nemo-smoke-20261110/ds41-medpix/ckpt/tiny_ds41
+  trust_remote_code: false
+  local_files_only: true
+distributed:
+  strategy: fsdp2
+  tp_size: 1
+  pp_size: 1
+  cp_size: 1
+  ep_size: 16
+  sequence_parallel: false
+  activation_checkpointing: false
+  defer_fsdp_grad_sync: false
+  moe:
+    reshard_after_forward: true
+    wrap_outer_model: true
+    lm_head_precision: float32
+    mp_policy:
+      _target_: torch.distributed.fsdp.MixedPrecisionPolicy
+      param_dtype: bfloat16
+      reduce_dtype: float32
+      output_dtype: null
+      cast_forward_inputs: false
+freeze_config:
+  freeze_vision_tower: false
+  freeze_language_model: false
+checkpoint:
+  enabled: false
+  checkpoint_dir: /home/liyiming06/ds41_16xpu/out-16xpu
+  model_save_format: safetensors
+  save_consolidated: false
+  dequantize_base_checkpoint: false
+loss_fn:
+  _target_: nemo_automodel.components.loss.masked_ce.MaskedCrossEntropy
+  fp32_upcast: false
+dataset:
+  _target_: nemo_automodel.components.datasets.vlm.datasets.make_medpix_dataset
+  path_or_dataset: /ssd1/liyiming06/deepseek41-nemo-smoke-20261110/ds41-medpix/data
+  split: train
+packed_sequence:
+  packed_sequence_size: 0
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  num_workers: 2
+  pin_memory: true
+  shuffle: true
+  drop_last: true
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.vlm.collate_fns.default_collate_fn
+    max_length: 4097
+validation_dataset: none
+validation_dataloader: none
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.0001
+  betas:
+  - 0.9
+  - 0.95
+  eps: 1.0e-08
+  weight_decay: 0.1
+lr_scheduler:
+  lr_warmup_steps: 2
+  lr_decay_steps: 20
+  lr_decay_style: cosine
+  min_lr: 1.0e-05
+clip_grad_norm:
+  backend: triton
+  max_norm: 1.0
+wandb:
+  enable: false

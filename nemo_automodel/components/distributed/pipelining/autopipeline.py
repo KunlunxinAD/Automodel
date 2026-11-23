@@ -19,11 +19,18 @@ from typing import Any, Callable, Literal
 import torch
 import torch.nn as nn
 from torch.distributed.device_mesh import DeviceMesh
-from torch.distributed.pipelining.microbatch import BlockMask, TensorChunkSpec
+from torch.distributed.pipelining.microbatch import TensorChunkSpec
 from torch.distributed.pipelining.microbatch import _Replicate as ReplicateChunkSpec
 from torch.distributed.pipelining.schedules import _PipelineSchedule
 from torch.distributed.pipelining.stage import PipelineStage
 from torch.utils._pytree import tree_map
+
+try:
+    from torch.distributed.pipelining.microbatch import BlockMask
+except ImportError:
+    # Torch re-exports BlockMask from microbatch only in recent builds; the XPU
+    # build does not, so take the class from the module that defines it.
+    from torch.nn.attention.flex_attention import BlockMask
 
 from nemo_automodel.components.distributed.pipelining.functional import (
     ParallelizeFnProtocol,

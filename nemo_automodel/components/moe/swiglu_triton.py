@@ -158,18 +158,11 @@ if HAVE_TRITON:
 
 def uses_triton_kernel(x: torch.Tensor, probs: torch.Tensor) -> bool:
     """Whether the Triton kernels can take these inputs (contiguous 2-D CUDA ``x``, one probability per row)."""
-    return (
-        HAVE_TRITON
-        and x.is_cuda
-        and x.dim() == 2
-        and x.is_contiguous()
-        and x.dtype in _SUPPORTED_DTYPES
-        and x.shape[1] % 2 == 0
-        and probs.is_cuda
-        and probs.numel() == x.shape[0]
-        and probs.dtype == torch.float32
-        and probs.is_contiguous()
-    )
+    # XPU reports is_cuda but cannot load a Triton binary: the launch fails with
+    # "Triton Error [CUDA]: CUDA_ERROR_NOT_SUPPORTED". Always take the compiled
+    # torch path instead.
+    del x, probs
+    return False
 
 
 def _forward(x: torch.Tensor, probs: torch.Tensor, limit: float) -> torch.Tensor:

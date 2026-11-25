@@ -40,10 +40,13 @@ PEER_HOST="${PEER_HOST:-}"
 
 RUN_TAG="${RUN_TAG:-medpix-tione-$(date +%Y%m%d-%H%M%S)}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs}"
-# BKCL needs the RDMA netdev names for anything cross-node; without them
+# BKCL needs the RDMA devices for anything cross-node; without them
 # init_bkcl_context fails with error code 2 and the Python layer only reports
-# "error code= 0 ... no error". Default to every rdma* interface in the pod.
-BKCL_RDMA_NICS="${BKCL_RDMA_NICS:-$(ls /sys/class/net 2>/dev/null | grep -E '^rdma[0-9]+$' | sort -V | paste -sd, - || true)}"
+# "error code= 0 ... no error". Despite its own hint naming netdevs, BKCL
+# resolves each entry under /sys/class/infiniband, so pass the ibdev names
+# (mlx5_bond_0, ...): a netdev name such as rdma0 is rejected with
+# "ibdev rdma0 not found in ib device list".
+BKCL_RDMA_NICS="${BKCL_RDMA_NICS:-$(ls /sys/class/infiniband 2>/dev/null | sort -V | paste -sd, - || true)}"
 PYTHON="${PYTHON:-$(command -v python || command -v python3 || true)}"
 if [[ -z "$PYTHON" ]]; then
     echo "no python on PATH; set PYTHON to the interpreter of the venv" >&2

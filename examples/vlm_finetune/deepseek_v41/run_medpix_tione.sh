@@ -40,6 +40,10 @@ PEER_HOST="${PEER_HOST:-}"
 
 RUN_TAG="${RUN_TAG:-medpix-tione-$(date +%Y%m%d-%H%M%S)}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs}"
+# BKCL needs the RDMA netdev names for anything cross-node; without them
+# init_bkcl_context fails with error code 2 and the Python layer only reports
+# "error code= 0 ... no error". Default to every rdma* interface in the pod.
+BKCL_RDMA_NICS="${BKCL_RDMA_NICS:-$(ls /sys/class/net 2>/dev/null | grep -E '^rdma[0-9]+$' | sort -V | paste -sd, - || true)}"
 PYTHON="${PYTHON:-$(command -v python || command -v python3 || true)}"
 if [[ -z "$PYTHON" ]]; then
     echo "no python on PATH; set PYTHON to the interpreter of the venv" >&2
@@ -73,7 +77,7 @@ if [[ -n "$PEER_HOST" && "$NODE_RANK" == "0" ]]; then
     ssh "$PEER_HOST" "cd $ROOT && ROOT=$ROOT CONFIG=$CONFIG DATASET=$DATASET \
         PROCESSOR=$PROCESSOR NPROC=$NPROC NNODES=$NNODES NODE_RANK=1 \
         MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT RUN_TAG=$RUN_TAG \
-        LOG_DIR=$LOG_DIR PYTHON=$PYTHON bash $ROOT/examples/vlm_finetune/deepseek_v41/run_medpix_tione.sh" \
+        LOG_DIR=$LOG_DIR PYTHON=$PYTHON BKCL_RDMA_NICS=$BKCL_RDMA_NICS bash $ROOT/examples/vlm_finetune/deepseek_v41/run_medpix_tione.sh" \
         > "$LOG_DIR/$RUN_TAG-node1.log" 2>&1 &
 fi
 
@@ -82,6 +86,7 @@ echo "dataset    $DATASET"
 echo "processor  $PROCESSOR"
 echo "node       $NODE_RANK of $NNODES, master $MASTER_ADDR:$MASTER_PORT"
 echo "ranks      $NPROC per node, $((NPROC * NNODES)) total"
+echo "rdma nics  ${BKCL_RDMA_NICS:-<none found, cross-node will fail>}"
 echo "log        $LOG_DIR/$RUN_TAG-node$NODE_RANK.log"
 
 cd "$ROOT"
@@ -90,6 +95,7 @@ CUDA_VISIBLE_DEVICES="$visible" \
 OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}" \
 RDMAV_FORK_SAFE="${RDMAV_FORK_SAFE:-1}" \
 BKCL_RDMA_VERBS="${BKCL_RDMA_VERBS:-1}" \
+BKCL_RDMA_NICS="$BKCL_RDMA_NICS" \
     "$PYTHON" -m torch.distributed.run \
     --nnodes="$NNODES" --node_rank="$NODE_RANK" --nproc_per_node="$NPROC" \
     --master_addr="$MASTER_ADDR" --master_port="$MASTER_PORT" \
